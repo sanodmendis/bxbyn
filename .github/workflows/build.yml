@@ -1,0 +1,49 @@
+name: Build Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: dev
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Set up JDK
+        uses: actions/setup-java@v3
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Inject Database Configuration
+        run: |
+          # Remove the dotenv import line
+          sed -i '/import io\.github\.cdimascio\.dotenv\.Dotenv;/d' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          
+          # Remove the dotenv instance line
+          sed -i '/private static final Dotenv dotenv = Dotenv\.load();/d' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          
+          # Replace dotenv.get() calls with direct secret values
+          sed -i 's/private static final String HOST = dotenv\.get("DB_HOST");/private static final String HOST = "${{ secrets.DB_HOST }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i 's/private static final String PORT = dotenv\.get("DB_PORT");/private static final String PORT = "${{ secrets.DB_PORT }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i 's/private static final String DATABASE = dotenv\.get("DB_NAME");/private static final String DATABASE = "${{ secrets.DB_NAME }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i 's/private static final String USERNAME = dotenv\.get("DB_USER");/private static final String USERNAME = "${{ secrets.DB_USER }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i 's/private static final String PASSWORD = dotenv\.get("DB_PASS");/private static final String PASSWORD = "${{ secrets.DB_PASS }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+
+      - name: Build Maven Project
+        run: mvn -B clean package
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: target/*.jar
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
