@@ -1,4 +1,4 @@
-name: Build Release EXE
+name: Build Release
 
 on:
   push:
@@ -14,10 +14,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
@@ -34,23 +34,22 @@ jobs:
           sed -i 's/private static final String USERNAME = dotenv\.get("DB_USER");/private static final String USERNAME = "${{ secrets.DB_USER }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
           sed -i 's/private static final String PASSWORD = dotenv\.get("DB_PASS");/private static final String PASSWORD = "${{ secrets.DB_PASS }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
 
-      - name: Build Maven Project (JAR)
+      - name: Build Maven Project
         run: mvn -B clean package
 
       - name: Detect Built JAR Filename
         id: detectjar
         shell: pwsh
         run: |
-          $jar = Get-ChildItem -Path "target" -Filter "*.jar" | Where-Object { $_.Name -notmatch "original" } | Select-Object -First 1
-          if (-not $jar) {
-            Write-Error "No JAR file found in target/"
-          }
-          Write-Host "Detected JAR: $($jar.Name)"
-          echo "JAR_NAME=$($jar.Name)" >> $env:GITHUB_OUTPUT
+          $jar = Get-ChildItem -Path "target" -Filter "*.jar" |
+                 Where-Object { $_.Name -notmatch "original" } |
+                 Select-Object -First 1
 
-      ###############################################################
-      # EXE WITHOUT JRE
-      ###############################################################
+          if (-not $jar) { throw "No JAR found!"; }
+
+          echo "JAR_NAME=$($jar.Name)" >> $env:GITHUB_OUTPUT
+          Write-Host "Using JAR: $($jar.Name)"
+
       - name: Create EXE (no JRE)
         shell: pwsh
         run: |
@@ -61,19 +60,19 @@ jobs:
             --name "YourApp" `
             --dest dist
 
-      ###############################################################
-      # CUSTOM JRE + EXE WITH JRE
-      ###############################################################
       - name: Create Custom JRE (jlink)
         shell: pwsh
         run: |
+          $deps = (jdeps --print-module-deps --ignore-missing-deps "target/${{ steps.detectjar.outputs.JAR_NAME }}")
+          Write-Host "Detected modules: $deps"
+
           jlink `
+            --add-modules $deps `
             --no-header-files `
             --no-man-pages `
             --strip-debug `
             --compress=2 `
-            --output customjre `
-            --add-modules java.base,java.sql
+            --output customjre
 
       - name: Create EXE with Embedded JRE
         shell: pwsh
@@ -86,9 +85,6 @@ jobs:
             --name "YourApp-JRE" `
             --dest dist
 
-      ###############################################################
-      # RELEASE ALL FILES
-      ###############################################################
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v1
         with:
