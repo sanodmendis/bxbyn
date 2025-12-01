@@ -66,8 +66,12 @@ jobs:
           $deps = (jdeps --print-module-deps --ignore-missing-deps "target/${{ steps.detectjar.outputs.JAR_NAME }}")
           Write-Host "Detected modules: $deps"
 
+          # Add critical launcher modules that jdeps might miss
+          $allModules = "$deps,java.base,jdk.crypto.ec"
+          Write-Host "Final modules: $allModules"
+
           jlink `
-            --add-modules $deps `
+            --add-modules $allModules `
             --no-header-files `
             --no-man-pages `
             --strip-debug `
@@ -83,7 +87,8 @@ jobs:
             --main-jar "${{ steps.detectjar.outputs.JAR_NAME }}" `
             --runtime-image customjre `
             --name "YourApp-JRE" `
-            --dest dist
+            --dest dist `
+            --win-console
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v1
