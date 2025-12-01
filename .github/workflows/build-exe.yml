@@ -60,23 +60,12 @@ jobs:
             --name "YourApp" `
             --dest dist
 
-      - name: Create Custom JRE (jlink)
+      - name: Copy Full JRE
         shell: pwsh
         run: |
-          $deps = (jdeps --print-module-deps --ignore-missing-deps "target/${{ steps.detectjar.outputs.JAR_NAME }}")
-          Write-Host "Detected modules: $deps"
-
-          # Add critical launcher modules that jdeps might miss
-          $allModules = "$deps,java.base,jdk.crypto.ec"
-          Write-Host "Final modules: $allModules"
-
-          jlink `
-            --add-modules $allModules `
-            --no-header-files `
-            --no-man-pages `
-            --strip-debug `
-            --compress=2 `
-            --output customjre
+          $javaHome = $env:JAVA_HOME
+          Write-Host "Copying full JRE from: $javaHome"
+          Copy-Item -Path $javaHome -Destination customjre -Recurse
 
       - name: Create EXE with Embedded JRE
         shell: pwsh
@@ -87,8 +76,7 @@ jobs:
             --main-jar "${{ steps.detectjar.outputs.JAR_NAME }}" `
             --runtime-image customjre `
             --name "YourApp-JRE" `
-            --dest dist `
-            --win-console
+            --dest dist
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v1
