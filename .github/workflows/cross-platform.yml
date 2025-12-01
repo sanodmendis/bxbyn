@@ -5,6 +5,9 @@ on:
     tags:
       - "v*"
 
+env:
+    PROJECT_NAME: "BxByn"
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -15,6 +18,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Extract Version
+        id: version
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -65,12 +76,23 @@ jobs:
             --input target `
             --main-jar "${{ steps.detectjar.outputs.JAR_NAME }}" `
             --runtime-image customjre `
-            --name "YourApp" `
+            --name ${{ env.PROJECT_NAME }} `
+            --app-version "${{ steps.version.outputs.VERSION }}" `
             --icon "icons/app-icon.ico" `
             --win-shortcut `
             --win-menu `
             --win-dir-chooser `
             --dest dist
+
+      - name: Rename EXE with Version
+        shell: pwsh
+        run: |
+          $oldName = "dist/${{ env.PROJECT_NAME }}-${{ steps.version.outputs.VERSION }}.exe"
+          $newName = "dist/${{ env.PROJECT_NAME }}_${{ steps.version.outputs.VERSION }}.exe"
+          if (Test-Path $oldName) {
+            Move-Item -Path $oldName -Destination $newName
+            Write-Host "Renamed to: $newName"
+          }
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
@@ -87,6 +109,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Extract Version
+        id: version
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -137,10 +167,21 @@ jobs:
             --input target \
             --main-jar "${{ steps.detectjar.outputs.JAR_NAME }}" \
             --runtime-image customjre \
-            --name "YourApp" \
+            --name ${{ env.PROJECT_NAME }} \
+            --app-version "${{ steps.version.outputs.VERSION }}" \
             --icon "icons/app-icon.png" \
             --linux-shortcut \
             --dest dist
+
+      - name: Rename DEB with Version
+        shell: bash
+        run: |
+          old_name="dist/${PROJECT_NAME,,}_${{ steps.version.outputs.VERSION }}-1_amd64.deb"
+          new_name="dist/${{ env.PROJECT_NAME }}_${{ steps.version.outputs.VERSION }}.deb"
+          if [ -f "$old_name" ]; then
+            mv "$old_name" "$new_name"
+            echo "Renamed to: $new_name"
+          fi
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
@@ -157,6 +198,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Extract Version
+        id: version
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -202,10 +251,21 @@ jobs:
             --input target \
             --main-jar "${{ steps.detectjar.outputs.JAR_NAME }}" \
             --runtime-image customjre \
-            --name "YourApp" \
+            --name ${{ env.PROJECT_NAME }} \
+            --app-version "${{ steps.version.outputs.VERSION }}" \
             --icon "icons/app-icon.icns" \
-            --mac-package-name "YourApp" \
+            --mac-package-name ${{ env.PROJECT_NAME }} \
             --dest dist
+
+      - name: Rename DMG with Version
+        shell: bash
+        run: |
+          old_name="dist/${{ env.PROJECT_NAME }}-${{ steps.version.outputs.VERSION }}.dmg"
+          new_name="dist/${{ env.PROJECT_NAME }}_${{ steps.version.outputs.VERSION }}.dmg"
+          if [ -f "$old_name" ]; then
+            mv "$old_name" "$new_name"
+            echo "Renamed to: $new_name"
+          fi
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
