@@ -1,0 +1,242 @@
+name: Build Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    environment: dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Inject Database Configuration
+        shell: bash
+        run: |
+          sed -i '/import io\.github\.cdimascio\.dotenv\.Dotenv;/d' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i '/private static final Dotenv dotenv = Dotenv\.load();/d' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+
+          sed -i 's/private static final String HOST = dotenv\.get("DB_HOST");/private static final String HOST = "${{ secrets.DB_HOST }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i 's/private static final String PORT = dotenv\.get("DB_PORT");/private static final String PORT = "${{ secrets.DB_PORT }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i 's/private static final String DATABASE = dotenv\.get("DB_NAME");/private static final String DATABASE = "${{ secrets.DB_NAME }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i 's/private static final String USERNAME = dotenv\.get("DB_USER");/private static final String USERNAME = "${{ secrets.DB_USER }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i 's/private static final String PASSWORD = dotenv\.get("DB_PASS");/private static final String PASSWORD = "${{ secrets.DB_PASS }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+
+      - name: Build Maven Project
+        run: mvn -B clean package
+
+      - name: Detect Built JAR Filename
+        id: detectjar
+        shell: pwsh
+        run: |
+          $jar = Get-ChildItem -Path "target" -Filter "*.jar" |
+                 Where-Object { $_.Name -notmatch "original" } |
+                 Select-Object -First 1
+
+          if (-not $jar) { throw "No JAR found!"; }
+
+          echo "JAR_NAME=$($jar.Name)" >> $env:GITHUB_OUTPUT
+          Write-Host "Using JAR: $($jar.Name)"
+
+      - name: Copy Full JRE
+        shell: pwsh
+        run: |
+          $javaHome = $env:JAVA_HOME
+          Write-Host "Copying full JRE from: $javaHome"
+          Copy-Item -Path $javaHome -Destination customjre -Recurse
+
+      - name: Create EXE with Embedded JRE
+        shell: pwsh
+        run: |
+          jpackage `
+            --type exe `
+            --input target `
+            --main-jar "${{ steps.detectjar.outputs.JAR_NAME }}" `
+            --runtime-image customjre `
+            --name "YourApp" `
+            --icon "icons/app-icon.ico" `
+            --win-shortcut `
+            --win-menu `
+            --win-dir-chooser `
+            --dest dist
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: dist/*.exe
+
+  build-linux:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    environment: dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Inject Database Configuration
+        shell: bash
+        run: |
+          sed -i '/import io\.github\.cdimascio\.dotenv\.Dotenv;/d' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i '/private static final Dotenv dotenv = Dotenv\.load();/d' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+
+          sed -i 's/private static final String HOST = dotenv\.get("DB_HOST");/private static final String HOST = "${{ secrets.DB_HOST }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i 's/private static final String PORT = dotenv\.get("DB_PORT");/private static final String PORT = "${{ secrets.DB_PORT }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i 's/private static final String DATABASE = dotenv\.get("DB_NAME");/private static final String DATABASE = "${{ secrets.DB_NAME }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i 's/private static final String USERNAME = dotenv\.get("DB_USER");/private static final String USERNAME = "${{ secrets.DB_USER }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i 's/private static final String PASSWORD = dotenv\.get("DB_PASS");/private static final String PASSWORD = "${{ secrets.DB_PASS }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+
+      - name: Build Maven Project
+        run: mvn -B clean package
+
+      - name: Detect Built JAR Filename
+        id: detectjar
+        shell: bash
+        run: |
+          JAR=$(ls target/*.jar | grep -v original | head -n 1)
+          JAR_NAME=$(basename "$JAR")
+          echo "JAR_NAME=$JAR_NAME" >> $GITHUB_OUTPUT
+          echo "Using JAR: $JAR_NAME"
+
+      - name: Copy Full JRE
+        shell: bash
+        run: |
+          echo "Copying full JRE from: $JAVA_HOME"
+          cp -r $JAVA_HOME customjre
+
+      - name: Create DEB with Embedded JRE
+        shell: bash
+        run: |
+          jpackage \
+            --type deb \
+            --input target \
+            --main-jar "${{ steps.detectjar.outputs.JAR_NAME }}" \
+            --runtime-image customjre \
+            --name "YourApp" \
+            --icon "icons/app-icon.png" \
+            --linux-shortcut \
+            --dest dist
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: dist/*.deb
+
+  build-macos:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    environment: dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Inject Database Configuration
+        shell: bash
+        run: |
+          sed -i '' '/import io\.github\.cdimascio\.dotenv\.Dotenv;/d' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i '' '/private static final Dotenv dotenv = Dotenv\.load();/d' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+
+          sed -i '' 's/private static final String HOST = dotenv\.get("DB_HOST");/private static final String HOST = "${{ secrets.DB_HOST }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i '' 's/private static final String PORT = dotenv\.get("DB_PORT");/private static final String PORT = "${{ secrets.DB_PORT }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i '' 's/private static final String DATABASE = dotenv\.get("DB_NAME");/private static final String DATABASE = "${{ secrets.DB_NAME }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i '' 's/private static final String USERNAME = dotenv\.get("DB_USER");/private static final String USERNAME = "${{ secrets.DB_USER }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i '' 's/private static final String PASSWORD = dotenv\.get("DB_PASS");/private static final String PASSWORD = "${{ secrets.DB_PASS }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+
+      - name: Build Maven Project
+        run: mvn -B clean package
+
+      - name: Detect Built JAR Filename
+        id: detectjar
+        shell: bash
+        run: |
+          JAR=$(ls target/*.jar | grep -v original | head -n 1)
+          JAR_NAME=$(basename "$JAR")
+          echo "JAR_NAME=$JAR_NAME" >> $GITHUB_OUTPUT
+          echo "Using JAR: $JAR_NAME"
+
+      - name: Copy Full JRE
+        shell: bash
+        run: |
+          echo "Copying full JRE from: $JAVA_HOME"
+          cp -r $JAVA_HOME customjre
+
+      - name: Create DMG with Embedded JRE
+        shell: bash
+        run: |
+          jpackage \
+            --type dmg \
+            --input target \
+            --main-jar "${{ steps.detectjar.outputs.JAR_NAME }}" \
+            --runtime-image customjre \
+            --name "YourApp" \
+            --icon "icons/app-icon.icns" \
+            --mac-package-name "YourApp" \
+            --dest dist
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build
+          path: dist/*.dmg
+
+  release:
+    needs: [build-windows, build-linux, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Windows Build
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+          path: dist
+
+      - name: Download Linux Build
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-build
+          path: dist
+
+      - name: Download macOS Build
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-build
+          path: dist
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v1
+        with:
+          generate_release_notes: true
+          files: dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
