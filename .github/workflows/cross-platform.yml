@@ -118,11 +118,16 @@ jobs:
           echo "JAR_NAME=$JAR_NAME" >> $GITHUB_OUTPUT
           echo "Using JAR: $JAR_NAME"
 
-      - name: Copy Full JRE
+      - name: Create Full JRE with jlink
         shell: bash
         run: |
-          echo "Copying full JRE from: $JAVA_HOME"
-          cp -r $JAVA_HOME customjre
+          echo "Creating full JRE with all modules"
+          jlink \
+            --add-modules ALL-MODULE-PATH \
+            --output customjre \
+            --compress=2 \
+            --no-header-files \
+            --no-man-pages
 
       - name: Create DEB with Embedded JRE
         shell: bash
