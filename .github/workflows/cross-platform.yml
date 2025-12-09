@@ -1,0 +1,307 @@
+name: Build Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+    PROJECT_NAME: "BxByn"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    environment: dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract Version
+        id: version
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
+
+      - name: set up jdk17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: inject db config
+        shell: bash
+        run: |
+          sed -i '/import io\.github\.cdimascio\.dotenv\.Dotenv;/d' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i '/private static final Dotenv dotenv = Dotenv\.load();/d' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+
+          sed -i 's/private static final String HOST = dotenv\.get("DB_HOST");/private static final String HOST = "${{ secrets.DB_HOST }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i 's/private static final String PORT = dotenv\.get("DB_PORT");/private static final String PORT = "${{ secrets.DB_PORT }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i 's/private static final String DATABASE = dotenv\.get("DB_NAME");/private static final String DATABASE = "${{ secrets.DB_NAME }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i 's/private static final String USERNAME = dotenv\.get("DB_USER");/private static final String USERNAME = "${{ secrets.DB_USER }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i 's/private static final String PASSWORD = dotenv\.get("DB_PASS");/private static final String PASSWORD = "${{ secrets.DB_PASS }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+
+      - name: build maven project
+        run: mvn -B clean package
+
+      - name: Detect Built JAR Filename
+        id: detectjar
+        shell: pwsh
+        run: |
+          $jar = Get-ChildItem -Path "target" -Filter "*.jar" |
+                 Where-Object { $_.Name -notmatch "original" } |
+                 Select-Object -First 1
+
+          if (-not $jar) { throw "No JAR found!"; }
+
+          echo "JAR_NAME=$($jar.Name)" >> $env:GITHUB_OUTPUT
+          Write-Host "Using JAR: $($jar.Name)"
+
+      - name: copy complete jre
+        shell: pwsh
+        run: |
+          $javaHome = $env:JAVA_HOME
+          Write-Host "Copying full JRE from: $javaHome"
+          Copy-Item -Path $javaHome -Destination customjre -Recurse
+
+      - name: create jre embedded exe
+        shell: pwsh
+        run: |
+          jpackage `
+            --type exe `
+            --input target `
+            --main-jar "${{ steps.detectjar.outputs.JAR_NAME }}" `
+            --runtime-image customjre `
+            --name ${{ env.PROJECT_NAME }} `
+            --app-version "${{ steps.version.outputs.VERSION }}" `
+            --icon "icons/app-icon.ico" `
+            --win-shortcut `
+            --win-menu `
+            --win-dir-chooser `
+            --dest dist
+
+      - name: rename exe with version
+        shell: pwsh
+        run: |
+          $oldName = "dist/${{ env.PROJECT_NAME }}-${{ steps.version.outputs.VERSION }}.exe"
+          $newName = "dist/${{ env.PROJECT_NAME }}_${{ steps.version.outputs.VERSION }}.exe"
+          if (Test-Path $oldName) {
+            Move-Item -Path $oldName -Destination $newName
+            Write-Host "Renamed to: $newName"
+          }
+
+      - name: upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: dist/*.exe
+
+  build-linux:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    environment: dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: extract version
+        id: version
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
+
+      - name: set up jdk17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: inject db config
+        shell: bash
+        run: |
+          sed -i '/import io\.github\.cdimascio\.dotenv\.Dotenv;/d' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i '/private static final Dotenv dotenv = Dotenv\.load();/d' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+
+          sed -i 's/private static final String HOST = dotenv\.get("DB_HOST");/private static final String HOST = "${{ secrets.DB_HOST }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i 's/private static final String PORT = dotenv\.get("DB_PORT");/private static final String PORT = "${{ secrets.DB_PORT }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i 's/private static final String DATABASE = dotenv\.get("DB_NAME");/private static final String DATABASE = "${{ secrets.DB_NAME }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i 's/private static final String USERNAME = dotenv\.get("DB_USER");/private static final String USERNAME = "${{ secrets.DB_USER }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i 's/private static final String PASSWORD = dotenv\.get("DB_PASS");/private static final String PASSWORD = "${{ secrets.DB_PASS }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+
+      - name: build maven project
+        run: mvn -B clean package
+
+      - name: detect built jar filename
+        id: detectjar
+        shell: bash
+        run: |
+          JAR=$(ls target/*.jar | grep -v original | head -n 1)
+          JAR_NAME=$(basename "$JAR")
+          echo "JAR_NAME=$JAR_NAME" >> $GITHUB_OUTPUT
+          echo "Using JAR: $JAR_NAME"
+
+      - name: create complete jre with jlink
+        shell: bash
+        run: |
+          echo "Creating full JRE with all modules"
+          jlink \
+            --add-modules ALL-MODULE-PATH \
+            --output customjre \
+            --compress=2 \
+            --no-header-files \
+            --no-man-pages
+
+      - name: create jre embedded deb
+        shell: bash
+        run: |
+          jpackage \
+            --type deb \
+            --input target \
+            --main-jar "${{ steps.detectjar.outputs.JAR_NAME }}" \
+            --runtime-image customjre \
+            --name ${{ env.PROJECT_NAME }} \
+            --app-version "${{ steps.version.outputs.VERSION }}" \
+            --icon "icons/app-icon.png" \
+            --linux-shortcut \
+            --dest dist
+
+      - name: rename dEB with version
+        shell: bash
+        run: |
+          old_name="dist/${PROJECT_NAME,,}_${{ steps.version.outputs.VERSION }}-1_amd64.deb"
+          new_name="dist/${{ env.PROJECT_NAME }}_${{ steps.version.outputs.VERSION }}.deb"
+          if [ -f "$old_name" ]; then
+            mv "$old_name" "$new_name"
+            echo "Renamed to: $new_name"
+          fi
+
+      - name: upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: dist/*.deb
+
+  build-macos:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    environment: dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: extract version
+        id: version
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
+
+      - name: set up jdk17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: inject db config
+        shell: bash
+        run: |
+          sed -i '' '/import io\.github\.cdimascio\.dotenv\.Dotenv;/d' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i '' '/private static final Dotenv dotenv = Dotenv\.load();/d' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+
+          sed -i '' 's/private static final String HOST = dotenv\.get("DB_HOST");/private static final String HOST = "${{ secrets.DB_HOST }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i '' 's/private static final String PORT = dotenv\.get("DB_PORT");/private static final String PORT = "${{ secrets.DB_PORT }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i '' 's/private static final String DATABASE = dotenv\.get("DB_NAME");/private static final String DATABASE = "${{ secrets.DB_NAME }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i '' 's/private static final String USERNAME = dotenv\.get("DB_USER");/private static final String USERNAME = "${{ secrets.DB_USER }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+          sed -i '' 's/private static final String PASSWORD = dotenv\.get("DB_PASS");/private static final String PASSWORD = "${{ secrets.DB_PASS }}";/' src/main/java/com/sanodmendis/bxbyn/database/DBConnection.java
+
+      - name: build maven project
+        run: mvn -B clean package
+
+      - name: detect built jar filename
+        id: detectjar
+        shell: bash
+        run: |
+          JAR=$(ls target/*.jar | grep -v original | head -n 1)
+          JAR_NAME=$(basename "$JAR")
+          echo "JAR_NAME=$JAR_NAME" >> $GITHUB_OUTPUT
+          echo "Using JAR: $JAR_NAME"
+
+      - name: copy complete jre
+        shell: bash
+        run: |
+          echo "Copying full JRE from: $JAVA_HOME"
+          cp -r $JAVA_HOME customjre
+
+      - name: create jre embedded dmg
+        shell: bash
+        run: |
+          jpackage \
+            --type dmg \
+            --input target \
+            --main-jar "${{ steps.detectjar.outputs.JAR_NAME }}" \
+            --runtime-image customjre \
+            --name ${{ env.PROJECT_NAME }} \
+            --app-version "${{ steps.version.outputs.VERSION }}" \
+            --icon "icons/app-icon.icns" \
+            --mac-package-name ${{ env.PROJECT_NAME }} \
+            --dest dist
+
+      - name: rename dmg with version
+        shell: bash
+        run: |
+          old_name="dist/${{ env.PROJECT_NAME }}-${{ steps.version.outputs.VERSION }}.dmg"
+          new_name="dist/${{ env.PROJECT_NAME }}_${{ steps.version.outputs.VERSION }}.dmg"
+          if [ -f "$old_name" ]; then
+            mv "$old_name" "$new_name"
+            echo "Renamed to: $new_name"
+          fi
+
+      - name: upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build
+          path: dist/*.dmg
+
+  release:
+    needs: [build-windows, build-linux, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: download windows build
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+          path: dist
+
+      - name: download linux build
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-build
+          path: dist
+
+      - name: download macos build
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-build
+          path: dist
+
+      - name: upload release assets
+        uses: softprops/action-gh-release@v1
+        with:
+          generate_release_notes: true
+          files: dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
