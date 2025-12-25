@@ -148,6 +148,12 @@ jobs:
           echo "JAR_NAME=$JAR_NAME" >> $GITHUB_OUTPUT
           echo "Using JAR: $JAR_NAME"
 
+      - name: install required build tools
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fakeroot binutils
+
       - name: create complete jre with jlink
         shell: bash
         run: |
@@ -171,6 +177,10 @@ jobs:
             --app-version "${{ steps.version.outputs.VERSION }}" \
             --icon "icons/app-icon.png" \
             --linux-shortcut \
+            --linux-deb-maintainer "maintainer@example.com" \
+            --linux-app-category "utils" \
+            --linux-menu-group "Applications" \
+            --linux-package-deps "" \
             --dest dist
 
       - name: rename deb with version
